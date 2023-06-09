@@ -1,2 +1,2 @@
-# notify-pending-reviewer
+# pending-review-notifications 
 Notify reviewers to review pending pull requests
