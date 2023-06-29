@@ -46,7 +46,7 @@ Action to send notifications to reviewers on github-discussion when they miss re
     **Important notes:**
       - Replace `<< category_name >>` and `<< discussion_title >>` with the respective category name and discussion title.
       - Replace `<< TURNAROUND_HOURS >>` with the expected PR review time.
-      - The [POSIX cron syntax](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07) needs to quoted as * is a special character in YAML.
+      - The [POSIX cron syntax](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07) needs to be quoted as * is a special character in YAML.
 
 4. Add PENDING_REVIEW_NOTIFICATION_TEMPLATE.yml file in `.github/` dir.
 

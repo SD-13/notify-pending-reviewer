@@ -120,7 +120,7 @@ def get_prs_assigned_to_reviewers(
 
 
 # Here we use type Any because the response we get from the api call is hard
-# to annotate in a typedDict, Hence used type Any.
+# to annotate in a typedDict.
 def __process_activity(
     pull_request: github_domain.PullRequest,
     event: Dict[str, Any]

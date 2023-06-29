@@ -40,7 +40,7 @@ class Assignee:
         self.timestamp = timestamp
 
     def get_readable_waiting_time(self) -> str:
-        """"Returns readable waiting time on review."""
+        """Returns readable waiting time on review."""
         delta = datetime.datetime.now(datetime.timezone.utc) - self.timestamp
         days = delta.days
         hours, _ = divmod(delta.seconds, 3600)
@@ -77,13 +77,13 @@ class PullRequest:
         self.assignees = assignees
 
     def is_reviewer_assigned(self) -> bool:
-        """Checks whether a reviewer assigned to the PR."""
+        """Checks whether a reviewer is assigned to the PR."""
         return not (
             len(self.assignees) == 0 or (
             len(self.assignees) == 1 and self.assignees[0].name == self.author))
 
     def get_assignee(self, user: str) -> Optional[Assignee]:
-        """Returns the assignee object for the given user if exist."""
+        """Returns the assignee object for the given user if it exists."""
         assignee = next(filter(lambda x: x.name == user, self.assignees), None)
         return assignee
 
@@ -91,7 +91,7 @@ class PullRequest:
         return f'PR #{self.number} by {self.author}'
 
     # Here we use type Any because the response we get from the api call
-    # is hard to annotate in a typedDict, Hence used type Any.
+    # is hard to annotate in a typedDict.
     @classmethod
     def from_github_response(
         cls: Type[PullRequest],
