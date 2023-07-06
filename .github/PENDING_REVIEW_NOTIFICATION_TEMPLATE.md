@@ -1,6 +1,7 @@
 Hi {{ username }},
 
-It looks like you're assigned to this PR, but haven't taken any action for at least 2 days: {{ pr_list }}
+It looks like you're assigned to this PR, but haven't taken any action for at least 2 days:
+{{ pr_list }}
 
 Please review the pending PRs as soon as possible, and reply to this thread once all the PRs are reviewed.
 
