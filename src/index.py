@@ -70,7 +70,8 @@ def generate_message(username: str, pr_list: str) -> str:
     with open(template_path, 'r', encoding='UTF-8') as file:
         message = file.read()
 
-    message = re.sub(r'\{\{ *username *\}\}', + 'test_user', message)
+    username = 'SD-13'
+    message = re.sub(r'\{\{ *username *\}\}', '@' + username, message)
     message = re.sub(r'\{\{ *pr_list *\}\}', pr_list, message)
 
     return message
