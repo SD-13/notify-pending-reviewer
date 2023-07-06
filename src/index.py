@@ -70,7 +70,7 @@ def generate_message(username: str, pr_list: str) -> str:
     with open(template_path, 'r', encoding='UTF-8') as file:
         message = file.read()
 
-    message = re.sub(r'\{\{ *username *\}\}', '@' + username, message)
+    message = re.sub(r'\{\{ *username *\}\}', + 'test_user', message)
     message = re.sub(r'\{\{ *pr_list *\}\}', pr_list, message)
 
     return message
@@ -94,6 +94,7 @@ def send_notification(
             f'- [#{pull_request.number}]({pull_request.url}) [Waiting for the'
             f'last {assignee.get_readable_waiting_time()}]')
 
+    body = generate_message(username, '\n'.join(pr_list_messages))
     body = 'test comment'
 
     if test_mode:
