@@ -114,8 +114,14 @@ def main(args: Optional[List[str]]=None) -> Literal[0]:
     discussion_title = parsed_args.title
     org_name = 'oppia'
     repo = 'oppia'
-
     max_wait_hours = parsed_args.max_wait_hours
+
+    # Raise error if any of the required arguments are not provided.
+    required_args = ['max_wait_hours', 'discussion_category', 'discussion_title']
+    for arg in required_args:
+        if arg is None:
+            raise Exception(f'Please provide {arg} argument.')
+
     test_mode = os.getenv('TEST_MODE_ENV')
 
     if parsed_args.verbose:
