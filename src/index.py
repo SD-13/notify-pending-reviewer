@@ -95,7 +95,6 @@ def send_notification(
             f'last {assignee.get_readable_waiting_time()}]')
 
     body = generate_message(username, '\n'.join(pr_list_messages))
-    body = 'test comment'
 
     if test_mode:
         logging.info('Logging notification comment in test mode: %s', body)
