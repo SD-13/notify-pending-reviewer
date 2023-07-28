@@ -12,17 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Github related commands and functions."""
+"""GitHub related commands and functions."""
 
 from __future__ import annotations
 
 import collections
 import datetime
 import logging
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Union
-import requests
-from dateutil import parser
+
 from src import github_domain
+
+from dateutil import parser
+import requests
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Union
 
 
 _TOKEN = None
@@ -33,27 +35,35 @@ ISSUE_TIMELINE_URL_TEMPLATE = (
 
 
 def init_service(token: Optional[str]=None) -> None:
-    """Initialize service with the given token."""
-    if token is None:
-        raise Exception('Must provide Github Personal Access Token.')
+    """Initialize service with the given token.
+
+    Args:
+        token: str|None. The GitHub token or None if no token is given.
+    
+    Raises:
+        Exception. Given GitHub token is not valid.
+    """
+    if token is None or token == '':
+        raise Exception('Must provide a valid GitHub Personal Access Token.')
 
     global _TOKEN # pylint: disable=global-statement
     _TOKEN = token
 
 
-# Here we use type Any because.
+# Here we use type Any because the decorated function can take any number of arguments
+# of any type and return a value of any type.
 def check_token(func: Callable[..., Any]) -> Callable[..., Any]:
     """A decorator to check whether the service is initialized with
-    the token.
+    the token or not.
     """
 
-    # Here we use type Any because.
+    # Here we use type Any because the function can take any number of arguments of any
+    # type and return a value of any type.
     def execute_if_token_initialized(*args: Any, **kwargs: Any) -> Any:
         """Executes the given function if the token is initialized."""
         if _TOKEN is None:
             raise Exception(
-                'Initialize the service with '
-                'github_services.init_service(TOKEN).')
+                'Initialize the service with github_services.init_service(TOKEN).')
         return func(*args, **kwargs)
 
     return execute_if_token_initialized
@@ -61,6 +71,7 @@ def check_token(func: Callable[..., Any]) -> Callable[..., Any]:
 
 def _get_request_headers() -> Dict[str, str]:
     """Returns the request headers for github-request."""
+
     return {
         'Accept': 'application/vnd.github.v3+json',
         'Authorization': f'token {_TOKEN}'
@@ -71,10 +82,19 @@ def _get_request_headers() -> Dict[str, str]:
 def get_prs_assigned_to_reviewers(
     org_name: str,
     repository: str,
-    wait_hours: int
+    max_waiting_time: int
 ) -> DefaultDict[str, List[github_domain.PullRequest]]:
-    """Fetches all the PRs on the given repository and returns a list of PRs
-    assigned to reviewers.
+    """Fetches all PRs and returns a list of PRs assigned to reviewers.
+
+    Args:
+        org_name: str. GitHub organization name.
+        repository: str. GitHub repository name.
+        max_waiting_time: int. The maximum time in hour to wait for a review. Any PR
+            exceed that limit should be considered to notify the reviewer.
+
+    Returns:
+        dict. A dictionary that represents the reviewer and the PRs, the reviewer
+        is assigned to.
     """
 
     pr_url = PULL_REQUESTS_URL_TEMPLATE.format(org_name, repository)
@@ -91,7 +111,8 @@ def get_prs_assigned_to_reviewers(
         response = requests.get(
             pr_url,
             params=params,
-            headers=_get_request_headers()
+            headers=_get_request_headers(),
+            timeout=15
         )
         response.raise_for_status()
         pr_subset = response.json()
@@ -108,14 +129,17 @@ def get_prs_assigned_to_reviewers(
             if not pull_request.is_reviewer_assigned():
                 continue
             for reviewer in pull_request.assignees:
+                # Since a reviewer was assigned, we are not expecting the respective
+                # timestamp(when the the reviewer was assigned) to be none.
+                assert reviewer.assigned_on_timestamp is not None
                 pending_review_time = (
                     datetime.datetime.now(datetime.timezone.utc) -
-                    reviewer.timestamp)
-                if (reviewer.name != pull_request.author) and (
+                    reviewer.assigned_on_timestamp)
+                if (reviewer.username != pull_request.author_username) and (
                     pending_review_time >=
-                    datetime.timedelta(hours=wait_hours)
+                    datetime.timedelta(hours=max_waiting_time)
                 ):
-                    reviewer_to_assigned_prs[reviewer.name].append(pull_request)
+                    reviewer_to_assigned_prs[reviewer.username].append(pull_request)
     return reviewer_to_assigned_prs
 
 
@@ -131,8 +155,15 @@ def __process_activity(
 
     assignee = pull_request.get_assignee(event['assignee']['login'])
     event_timestamp = parser.parse(event['created_at'])
+
+    # If a reviewer is not assigned, the `assigned_on_timestamp` value will be None. The
+    # following code is checking that condition before setting the timestamp.
     if assignee:
-        assignee.set_timestamp(max([assignee.timestamp, event_timestamp]))
+        if assignee.assigned_on_timestamp:
+            assignee.set_assigned_on_timestamp(
+                max([assignee.assigned_on_timestamp, event_timestamp]))
+        else:
+            assignee.set_assigned_on_timestamp(event_timestamp)
 
 
 def update_assignee_timestamp(
@@ -154,7 +185,8 @@ def update_assignee_timestamp(
                 params={'page': page_number, 'per_page': 100},
                 headers={
                     'Accept': 'application/vnd.github+json',
-                    'Authorization': f'token {_TOKEN}'}
+                    'Authorization': f'token {_TOKEN}'},
+                timeout=15
             )
             response.raise_for_status()
             timeline_subset = response.json()
@@ -171,13 +203,16 @@ def update_assignee_timestamp(
 @check_token
 def create_discussion_comment(
     org_name: str,
-    repo: str,
+    repo_name: str,
     discussion_category: str,
     discussion_title: str,
-    body: str
+    message: str
 ) -> None:
     """Comment in the existing GitHub discussion."""
 
+    # The following query is written in GraphQL and is being used to fetch data about the
+    # existing GitHub discussions. This helps to find out the discussion where we want
+    # to comment. To learn more, check this out https://docs.github.com/en/graphql.
     query = """
         query ($org_name: String!, $repository: String!) {
             repository(owner: $org_name, name: $repository) {
@@ -204,15 +239,15 @@ def create_discussion_comment(
 
     variables = {
         'org_name': org_name,
-        'repository': repo
+        'repository': repo_name
     }
 
     response = requests.post(
         GITHUB_GRAPHQL_URL,
         json={'query': query, 'variables': variables},
-        headers=_get_request_headers()
+        headers=_get_request_headers(),
+        timeout=15
     )
-
     data = response.json()
 
     discussion_id = None
@@ -235,6 +270,10 @@ def create_discussion_comment(
     if discussion_id is None:
         raise Exception(f'{discussion_category} category is missing in GitHub Discussion.')
 
+    # The following code is written in GraphQL and is being used to perform a mutation
+    # operation. More specifically, we are using it to comment in GitHub discussion to
+    # let reviewers know about some of their pending tasks. To learn more, check this out
+    # https://docs.github.com/en/graphql.
     query = """
         mutation comment($discussion_id: ID!, $comment: String!) {
             addDiscussionComment(input: {discussionId: $discussion_id, body: $comment}) {
@@ -248,12 +287,13 @@ def create_discussion_comment(
 
     variables = {
         'discussion_id': discussion_id,
-        'comment': body
+        'comment': message
     }
 
     response = requests.post(
         GITHUB_GRAPHQL_URL,
         json={'query': query, 'variables': variables},
-        headers=_get_request_headers()
+        headers=_get_request_headers(),
+        timeout=15
     )
     response.raise_for_status()

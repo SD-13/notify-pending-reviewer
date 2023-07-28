@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit test for the github_services.py file."""
+"""Unit test for the main.py file."""
 
 from __future__ import annotations
 
@@ -22,34 +22,50 @@ import unittest
 from unittest import mock
 
 from src import github_services
+from src import main
 
 import requests
 import requests_mock
 from typing import Any, Dict, List
 
 
-class TestInitServices(unittest.TestCase):
-    """Test init service."""
+class GenerateMessageTests(unittest.TestCase):
+    """test generate message function."""
 
-    def test_init_service_with_token(self) -> None:
+    def setUp(self) -> None:
+        self.test_template = '{{ username }}\n{{ pr_list }}'
 
-        token = 'my_github_token'
-        github_services.init_service(token)
-        self.assertEqual(github_services._TOKEN, token)
+    def test_generate_message(self) -> None:
+        """Test generate message function."""
 
-    def test_init_service_without_token(self) -> None:
+        file_data = mock.mock_open(read_data=self.test_template)
+        template_path = '.github/PENDING_REVIEW_NOTIFICATION_TEMPLATE.md'
+        with mock.patch('builtins.open', file_data):
+            pr_list = (
+                '- [#123](https://githuburl.pull/123) [Waiting for the last 2 days, 8'
+                ' hours]')
+            response = main.generate_message('reviewerName1', pr_list, template_path)
+        expected_response = (
+            '@reviewerName1\n- [#123](https://githuburl.pull/123) [Waiting for the last 2'
+            ' days, 8 hours]')
+        self.assertEqual(expected_response, response)
 
-        with self.assertRaises(Exception):
-            github_services.init_service()
+    def test_generate_message_raises_template_not_found_error(self) -> None:
+        """Test generate message function."""
 
-    def test_init_service_with_empty_token(self) -> None:
+        file_data = mock.mock_open(read_data=self.test_template)
+        template_path = 'invalid_path'
+        with mock.patch('builtins.open', file_data):
+            pr_list = (
+                '- [#123](https://githuburl.pull/123) [Waiting for the last 2 days, 8 '
+                'hours]')
+            with self.assertRaisesRegex(
+                Exception, f'Please add a template file at: {template_path}'):
+                main.generate_message('reviewerName1', pr_list, template_path)
 
-        with self.assertRaises(Exception):
-            github_services.init_service('')
 
-
-class TestGetPrsAssignedToReviewers(unittest.TestCase):
-    """Test get prs assigned to reviewers."""
+class ModuleIntegrationTest(unittest.TestCase):
+    """Integration test for the send notification feature."""
 
     def _get_past_time(self, hours: int=0) -> str:
         """Returns the subtraction of current time and the arg passed in hours."""
@@ -177,6 +193,8 @@ class TestGetPrsAssignedToReviewers(unittest.TestCase):
         self.test_template = '{{ username }}\n{{ pr_list }}'
 
     def mock_all_get_requests(self, mock_request: requests_mock.Mocker) -> None:
+        """Mock all get requests."""
+
         param_page_1 = '?page=1&per_page=100'
         param_page_2 = '?page=2&per_page=100'
         mock_request.get(
@@ -206,46 +224,54 @@ class TestGetPrsAssignedToReviewers(unittest.TestCase):
                 self.org_name, self.repo_name, 234) + param_page_2,
             text=json.dumps([]))
 
-    def test_get_prs_assigned_to_reviewers(self) -> None:
-        token = 'my_github_token'
-        github_services.init_service(token)
+    def test_executing_main_function_sends_notification(self) -> None:
+        """Test main function to send notification."""
 
         with requests_mock.Mocker() as mock_request:
+
+            # Mock all get requests.
             self.mock_all_get_requests(mock_request)
 
-            github_services.get_prs_assigned_to_reviewers(
-                self.org_name, self.repo_name, 20)
+            # Here we are mocking the two post requests, we will use in the below test.
+            # One request for fetching all existing GitHub Discussions data and the next
+            # request to post a comment in the particular GitHub Discussion.
 
-        self.assertEqual(mock_request.call_count, 6)
-
-    def test_create_discussion_comment(self) -> None:
-        """test create discussion comment."""
-
-        token = 'my_github_token'
-        github_services.init_service(token)
-        with requests_mock.Mocker() as mock_requests:
-            self.mock_all_get_requests(mock_requests)
-
+            # Creating a Mock instance.
             mock_resp_1 = mock.Mock()
+            # Setting the return value of the Mock instance.
             mock_resp_1.json.return_value = self.response_for_discussions
+
+            # Creating a Mock instance.
             mock_resp_2 = mock.Mock()
+            # Setting the return value of the Mock instance.
             mock_resp_2.json.return_value = self.response_for_comment
 
-            with mock.patch('requests.post', side_effect=[
-                mock_resp_1, mock_resp_2, mock_resp_1, mock_resp_2]) as mock_post:
+            # Here we are patching the POST requests using side_effect. So, when you put
+            # callables inside `side_effect`, it will iterate through the items and
+            # return each at a time. For our test, we are expecting total 6 post requests,
+            # three for each(fetching discussions and posting comment) alternatively. To
+            # understand the request count clearly, for our test data, we are calling
+            # them twice each so four times and two times here below to assert the
+            # response.
+            with mock.patch(
+                'requests.post', side_effect=[
+                    mock_resp_1 if i % 2 == 0 else mock_resp_2 for i in range(6)
+                ]) as mock_post:
+
                 response_1 = requests.post(github_services.GITHUB_GRAPHQL_URL, timeout=15)
                 request_2 = requests.post(github_services.GITHUB_GRAPHQL_URL, timeout=15)
-
-                github_services.create_discussion_comment(
-                    self.org_name,
-                    self.repo_name,
-                    'test_category_name_1',
-                    'test_discussion_title_1',
-                    'test_message'
-                )
-
+                file_data = mock.mock_open(read_data=self.test_template)
+                with mock.patch('builtins.open', file_data):
+                    main.main([
+                        '--repo', 'orgName/repo',
+                        '--category', 'test_category_name_1',
+                        '--title', 'test_discussion_title_1',
+                        '--max-wait-hours', '20',
+                        '--token', 'githubTokenForApiRequest'
+                    ])
         self.assertTrue(mock_resp_1.assert_called)
         self.assertTrue(mock_resp_2.assert_called)
-        self.assertEqual(mock_post.call_count, 4)
+        self.assertEqual(mock_post.call_count, 6)
+        self.assertEqual(mock_request.call_count, 6)
         self.assertEqual(response_1.json.return_value, self.response_for_discussions)
         self.assertEqual(request_2.json.return_value, self.response_for_comment)
