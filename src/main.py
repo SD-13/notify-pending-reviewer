@@ -80,7 +80,7 @@ def generate_message(username: str, pr_list: str, template_path: str=TEMPLATE_PA
 
     # message = re.sub(r'\{\{ *username *\}\}', '@' + username, message)
     # message = re.sub(r'\{\{ *pr_list *\}\}', pr_list, message)
-    message = 'test_message'
+    message = ''.join(pr_list)
 
     return message
 
