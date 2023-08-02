@@ -258,9 +258,9 @@ class ModuleIntegrationTest(unittest.TestCase):
                 self.assertEqual(mock_post.call_count, 0)
 
                 response_1 = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
                 request_2 = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
                 file_data = mock.mock_open(read_data=self.test_template)
                 with mock.patch('builtins.open', file_data):
                     main.main([

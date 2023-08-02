@@ -249,9 +249,9 @@ class TestGetPrsAssignedToReviewers(unittest.TestCase):
             with mock.patch('requests.post', side_effect=[
                 mock_response_1, mock_response_2, mock_response_1, mock_response_2]) as mock_post:
                 response_1 = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
                 response_2 = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
 
                 github_services.create_discussion_comment(
                     self.org_name,
