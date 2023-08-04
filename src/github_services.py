@@ -32,7 +32,7 @@ GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql'
 PULL_REQUESTS_URL_TEMPLATE = 'https://api.github.com/repos/{0}/{1}/pulls'
 ISSUE_TIMELINE_URL_TEMPLATE = (
     'https://api.github.com/repos/{0}/{1}/issues/{2}/timeline')
-TIMEOUT_SECS = 0.000000000000001
+TIMEOUT_SECS = 15
 
 
 def init_service(token: Optional[str]=None) -> None:
