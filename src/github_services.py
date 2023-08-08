@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import builtins
 import collections
 import datetime
 import logging
@@ -46,7 +47,7 @@ def init_service(token: Optional[str]=None) -> None:
         Exception. Given GitHub token is not valid.
     """
     if token is None or token == '':
-        raise Exception('Must provide a valid GitHub Personal Access Token.')
+        raise builtins.BaseException('Must provide a valid GitHub Personal Access Token.')
 
     global _TOKEN # pylint: disable=global-statement
     _TOKEN = token
@@ -64,7 +65,7 @@ def check_token(func: Callable[..., Any]) -> Callable[..., Any]:
     def execute_if_token_initialized(*args: Any, **kwargs: Any) -> Any:
         """Executes the given function if the token is initialized."""
         if _TOKEN is None:
-            raise Exception(
+            raise builtins.BaseException(
                 'Initialize the service with github_services.init_service(TOKEN).')
         return func(*args, **kwargs)
 
@@ -193,12 +194,14 @@ def get_pull_request_dict_with_timestamp(
     event: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Adds the timestamp in dictionary as a key value pair where the key is `created_at`
-    and the value is datetime when the reviewer was assigned."""
+    and the value is datetime when the reviewer was assigned.
+    """
 
     for assignee in pr_dict['assignees']:
         if event['assignee']['login'] == assignee['login']:
             assignee['created_at'] = parser.parse(event['created_at'])
     return pr_dict
+
 
 @check_token
 def _get_discussion_data(
@@ -207,6 +210,9 @@ def _get_discussion_data(
     discussion_category: str,
     discussion_title: str,
 ) -> Tuple[str, int]:
+    """Fetch discussion data from api and return corresponding discussion id and
+    discussion number.
+    """
 
     # The following query is written in GraphQL and is being used to fetch data about the
     # existing GitHub discussions. This helps to find out the discussion where we want
@@ -261,13 +267,13 @@ def _get_discussion_data(
                     discussion_number = discussion['node']['number']
                     break
             if discussion_id is None:
-                raise Exception(
+                raise builtins.BaseException(
                     f'Discussion with title {discussion_title} not found, please create a '
                     'discussion with that title.')
             break
 
     if discussion_id is None:
-        raise Exception(f'{discussion_category} category is missing in GitHub Discussion.')
+        raise builtins.BaseException(f'{discussion_category} category is missing in GitHub Discussion.')
 
     return discussion_id, discussion_number
 
@@ -278,6 +284,7 @@ def _get_past_time(days: int=60) -> str:
         datetime.datetime.now(
             datetime.timezone.utc) - datetime.timedelta(days=days)).strftime(
             '%Y-%m-%dT%H:%M:%SZ')
+
 
 def _get_old_comment_ids(
     org_name: str,
@@ -337,6 +344,7 @@ def _get_old_comment_ids(
             break
 
     return comment_ids
+
 
 def _delete_comment(comment_id: str) -> None:
     """Delete the GitHub Discussion comment related to the comment id."""
