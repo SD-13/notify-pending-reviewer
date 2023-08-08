@@ -20,7 +20,7 @@ import collections
 import datetime
 import logging
 
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 from dateutil import parser
 import requests
 from src import github_domain
@@ -33,6 +33,7 @@ PULL_REQUESTS_URL_TEMPLATE = 'https://api.github.com/repos/{0}/{1}/pulls'
 ISSUE_TIMELINE_URL_TEMPLATE = (
     'https://api.github.com/repos/{0}/{1}/issues/{2}/timeline')
 TIMEOUT_SECS = 15
+DELETE_COMMENTS_BEFORE_IN_DAYS = 60
 
 
 def init_service(token: Optional[str]=None) -> None:
@@ -124,7 +125,7 @@ def get_prs_assigned_to_reviewers(
         page_number += 1
 
         pull_requests: List[github_domain.PullRequest] = [
-            get_pull_request_object(org_name, repo_name, pull_request)
+            get_pull_request_object_from_dict(org_name, repo_name, pull_request)
             for pull_request in pr_subset
         ]
 
@@ -145,12 +146,13 @@ def get_prs_assigned_to_reviewers(
 
 # Here we use type Any because the response we get from the api call is hard
 # to annotate in a typedDict.
-def get_pull_request_object(
+@check_token
+def get_pull_request_object_from_dict(
     org_name: str,
     repo_name: str,
     pr_dict: Dict[str, Any]
 ) -> github_domain.PullRequest:
-    """Fetch PR timelines and create Pull Request objects."""
+    """Fetch PR timelines and create Pull Request objects from response dictionary."""
 
     pr_number = pr_dict['number']
     activity_url = ISSUE_TIMELINE_URL_TEMPLATE.format(
@@ -198,16 +200,13 @@ def get_pull_request_dict_with_timestamp(
             assignee['created_at'] = parser.parse(event['created_at'])
     return pr_dict
 
-
 @check_token
-def create_discussion_comment(
+def _get_discussion_data(
     org_name: str,
     repo_name: str,
     discussion_category: str,
     discussion_title: str,
-    message: str
-) -> None:
-    """Comment in the existing GitHub discussion."""
+) -> Tuple[str, int]:
 
     # The following query is written in GraphQL and is being used to fetch data about the
     # existing GitHub discussions. This helps to find out the discussion where we want
@@ -226,6 +225,7 @@ def create_discussion_comment(
                                     node {
                                         id
                                         title
+                                        number
                                     }
                                 }
                             }
@@ -248,7 +248,6 @@ def create_discussion_comment(
         timeout=TIMEOUT_SECS
     )
     data = response.json()
-
     discussion_id = None
     discussion_categories = (
         data['data']['repository']['discussionCategories']['nodes'])
@@ -259,6 +258,7 @@ def create_discussion_comment(
             for discussion in discussions:
                 if discussion['node']['title'] == discussion_title:
                     discussion_id = discussion['node']['id']
+                    discussion_number = discussion['node']['number']
                     break
             if discussion_id is None:
                 raise Exception(
@@ -269,12 +269,111 @@ def create_discussion_comment(
     if discussion_id is None:
         raise Exception(f'{discussion_category} category is missing in GitHub Discussion.')
 
+    return discussion_id, discussion_number
+
+
+def _get_past_time(days: int=60) -> str:
+    """Returns the subtraction of current time and the arg passed in days."""
+    return (
+        datetime.datetime.now(
+            datetime.timezone.utc) - datetime.timedelta(days=days)).strftime(
+            '%Y-%m-%dT%H:%M:%SZ')
+
+def _get_old_comment_ids(
+    org_name: str,
+    repo_name: str,
+    discussion_number: int
+) -> List[str]:
+    """Return the old comment ids."""
+
+    # The following query is written in GraphQL and is being used to fetch the oldest 50
+    # comments in a existing GitHub discussions. Assuming that, this workflow will run
+    # twice every week, we will may not have more than 50 comments to delete. To learn
+    # more, check this out https://docs.github.com/en/graphql.
+    query = """
+        query ($org_name: String!, $repository: String!, $discussion_number: Int!) {
+            repository(owner: $org_name, name: $repository) {
+                discussion(number: $discussion_number) {
+                    comments(first: 50) {
+                        nodes {
+                            id
+                            createdAt
+                        }
+                    }
+                }
+            }
+        }
+    """
+
+    variables = {
+        'org_name': org_name,
+        'repository': repo_name,
+        'discussion_number': discussion_number
+    }
+
+    response = requests.post(
+        GITHUB_GRAPHQL_URL,
+        json={'query': query, 'variables': variables},
+        headers=_get_request_headers(),
+        timeout=TIMEOUT_SECS
+    )
+
+    response.raise_for_status()
+    data = response.json()
+
+    comment_ids: List[str] = []
+
+    discussion_comments = (
+        data['data']['repository']['discussion']['comments']['nodes']
+    )
+
+    # Delete comments posted before this time.
+    delete_comments_before_in_days = _get_past_time(DELETE_COMMENTS_BEFORE_IN_DAYS)
+
+    for comment in discussion_comments:
+        if comment['createdAt'] < delete_comments_before_in_days:
+            comment_ids.append(comment['id'])
+        else:
+            break
+
+    return comment_ids
+
+def _delete_comment(comment_id: str) -> None:
+    """Delete the GitHub Discussion comment related to the comment id."""
+
+    query = """
+        mutation deleteComment($comment_id: ID!) {
+            deleteDiscussionComment(input: {id: $comment_id}) {
+                clientMutationId
+                comment {
+                    bodyText
+                }
+            }
+        }
+    """
+
+    variables = {
+        'comment_id': comment_id
+    }
+
+    response = requests.post(
+        GITHUB_GRAPHQL_URL,
+        json={'query': query, 'variables': variables},
+        headers=_get_request_headers(),
+        timeout=TIMEOUT_SECS
+    )
+    response.raise_for_status()
+
+
+def _post_comment(discussion_id: str, message: str) -> None:
+    """Post the given message in an existing discussion."""
+
     # The following code is written in GraphQL and is being used to perform a mutation
     # operation. More specifically, we are using it to comment in GitHub discussion to
     # let reviewers know about some of their pending tasks. To learn more, check this out:
     # https://docs.github.com/en/graphql.
     query = """
-        mutation comment($discussion_id: ID!, $comment: String!) {
+        mutation post_comment($discussion_id: ID!, $comment: String!) {
             addDiscussionComment(input: {discussionId: $discussion_id, body: $comment}) {
                 clientMutationId
                 comment {
@@ -296,3 +395,37 @@ def create_discussion_comment(
         timeout=TIMEOUT_SECS
     )
     response.raise_for_status()
+
+
+@check_token
+def delete_discussion_comments(
+    org_name: str,
+    repo_name: str,
+    discussion_category: str,
+    discussion_title: str
+) -> None:
+    """Delete old comments from GitHub Discussion."""
+
+    _, discussion_number = _get_discussion_data(
+        org_name, repo_name, discussion_category, discussion_title)
+
+    comment_ids = _get_old_comment_ids(org_name, repo_name, discussion_number)
+
+    for comment_id in comment_ids:
+        _delete_comment(comment_id)
+
+
+@check_token
+def add_discussion_comments(
+    org_name: str,
+    repo_name: str,
+    discussion_category: str,
+    discussion_title: str,
+    message: str
+) -> None:
+    """Add comments in an existing GitHub discussion."""
+
+    discussion_id, _ = _get_discussion_data(
+        org_name, repo_name, discussion_category, discussion_title)
+
+    _post_comment(discussion_id, message)
