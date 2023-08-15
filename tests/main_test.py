@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import builtins
 import datetime
 import json
 import unittest
@@ -60,7 +61,7 @@ class GenerateMessageTests(unittest.TestCase):
                 '- [#123](https://githuburl.pull/123) [Waiting for the last 2 days, 8 '
                 'hours]')
             with self.assertRaisesRegex(
-                Exception, f'Please add a template file at: {template_path}'):
+                builtins.BaseException, f'Please add a template file at: {template_path}'):
                 main.generate_message('reviewerName1', pr_list, template_path)
 
 
@@ -79,45 +80,33 @@ class ModuleIntegrationTest(unittest.TestCase):
         self.repo_name = 'repo'
         self.discussion_category = 'category'
         self.discussion_title = 'title'
-        # Here we use type Any because this response is hard to annotate in a typedDict.
-        self.response_for_get_discussion_data: Dict[str, Any] = {
-            'data': {
-                'repository': {
-                    'discussionCategories': {
-                        'nodes': [
+        self.response_for_get_categories = {
+            "data": {
+                "repository": {
+                    "discussionCategories": {
+                        "nodes": [
                             {
-                                'id': 'test_category_id_1',
-                                'name': 'test_category_name_1',
-                                'repository': {
-                                    'discussions': {
-                                        'edges': [
-                                            {
-                                                'node': {
-                                                'id': 'test_discussion_id_1',
-                                                'title': 'test_discussion_title_1',
-                                                'number': 1
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
+                                "id": "test_category_id_1",
+                                "name": "test_category_name_1"
                             },
                             {
-                                'id': 'test_category_id_2',
-                                'name': 'test_category_name_2',
-                                'repository': {
-                                    'discussions': {
-                                        'edges': [
-                                            {
-                                                'node': {
-                                                'id': 'test_discussion_id_2',
-                                                'title': 'test_discussion_title_2',
-                                                'number': 2
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
+                                "id": "test_category_id_2",
+                                "name": "test_category_name_2"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        self.response_for_get_discussion = {
+            'data': {
+                'repository': {
+                    'discussions': {
+                        'nodes': [
+                            {
+                                'id': 'test_discussion_id_1',
+                                'title': 'test_discussion_title_1',
+                                'number': 12345
                             }
                         ]
                     }
@@ -141,9 +130,9 @@ class ModuleIntegrationTest(unittest.TestCase):
             }
         }
         self.response_for_delete_comment = {
-            "data": {
-                "deleteDiscussionComment": {
-                    "clientMutationId": "test_id"
+            'data': {
+                'deleteDiscussionComment': {
+                    'clientMutationId': 'test_id'
                 }
             }
         }
@@ -249,6 +238,7 @@ class ModuleIntegrationTest(unittest.TestCase):
                 self.org_name, self.repo_name, 234) + param_page_2,
             text=json.dumps([]))
 
+    # Here we use type Any because this response is hard to annotate in a typedDict.
     def mock_post_requests(self, response: Dict[str, Any]) -> mock.Mock:
         """Mock post requests."""
 
@@ -262,12 +252,15 @@ class ModuleIntegrationTest(unittest.TestCase):
         # Here we are mocking the POST requests that we will use in the test below.
         # and they are listed in the particular order they will be called.
         post_requests_side_effect: List[mock.Mock] = [
-            self.mock_post_requests(self.response_for_get_discussion_data),
+            self.mock_post_requests(self.response_for_get_categories),
+            self.mock_post_requests(self.response_for_get_discussion),
             self.mock_post_requests(self.response_for_get_old_comment_ids),
             self.mock_post_requests(self.response_for_delete_comment),
-            self.mock_post_requests(self.response_for_get_discussion_data),
+            self.mock_post_requests(self.response_for_get_categories),
+            self.mock_post_requests(self.response_for_get_discussion),
             self.mock_post_requests(self.response_for_post_comment),
-            self.mock_post_requests(self.response_for_get_discussion_data),
+            self.mock_post_requests(self.response_for_get_categories),
+            self.mock_post_requests(self.response_for_get_discussion),
             self.mock_post_requests(self.response_for_post_comment)
         ]
 
@@ -298,30 +291,63 @@ class ModuleIntegrationTest(unittest.TestCase):
                         '--token', 'githubTokenForApiRequest'
                     ])
 
-                response_for_get_discussion_data = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
+                response_for_get_categories = requests.post(
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
+                response_for_get_discussion = requests.post(
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
                 response_for_get_old_comment_ids = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
                 response_for_delete_comment = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
-                response_for_get_discussion_data = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
+                response_for_get_categories = requests.post(
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
+                response_for_get_discussion = requests.post(
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
                 response_for_post_comment = requests.post(
-                    github_services.GITHUB_GRAPHQL_URL, timeout=github_services.TIMEOUT_SECS)
+                    github_services.GITHUB_GRAPHQL_URL, timeout=(
+                        github_services.TIMEOUT_SECS))
 
-        self.assertEqual(mock_post.call_count, 12)
+        self.assertEqual(mock_post.call_count, 17)
         self.assertEqual(mock_request.call_count, 6)
 
-        # Here we use MyPy ignore because response_1 and response_2 are of Mock type and
+        # Here we use MyPy ignore because the response is of Mock type and
         # Mock does not contain return_value attribute, so because of this MyPy throws an
         # error. Thus to avoid the error, we used ignore here.
         self.assertEqual(
-            response_for_get_discussion_data.json.return_value, self.response_for_get_discussion_data)  # type: ignore[attr-defined]
+            response_for_get_categories.json.return_value, self.response_for_get_categories)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
+        self.assertEqual(
+            response_for_get_discussion.json.return_value, self.response_for_get_discussion)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
         self.assertEqual(
             response_for_get_old_comment_ids.json.return_value, self.response_for_get_old_comment_ids)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
         self.assertEqual(
             response_for_delete_comment.json.return_value, self.response_for_delete_comment)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
         self.assertEqual(
-            response_for_get_discussion_data.json.return_value, self.response_for_get_discussion_data)  # type: ignore[attr-defined]
+            response_for_get_categories.json.return_value, self.response_for_get_categories)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
+        self.assertEqual(
+            response_for_get_discussion.json.return_value, self.response_for_get_discussion)  # type: ignore[attr-defined]
+        # Here we use MyPy ignore because the response is of Mock type and
+        # Mock does not contain return_value attribute, so because of this MyPy throws an
+        # error. Thus to avoid the error, we used ignore here.
         self.assertEqual(
             response_for_post_comment.json.return_value, self.response_for_post_comment)  # type: ignore[attr-defined]
