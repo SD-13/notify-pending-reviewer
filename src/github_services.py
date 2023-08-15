@@ -215,8 +215,8 @@ def _get_discussion_data(
     discussion number.
     """
 
-    # The following query is written in GraphQL and is being used to fetch the
-    # category ids and titles from GitHub discussions. To learn more, check this out
+    # The following query is written in GraphQL and is being used to fetch the category
+    # ids and titles from the GitHub discussions. To learn more, check this out
     # https://docs.github.com/en/graphql.
     query = """
         query ($org_name: String!, $repository: String!) {
@@ -279,7 +279,7 @@ def _get_discussion_data(
     variables = {
         'org_name': org_name,
         'repository': repo_name,
-        'category_id': 'DIC_kwDOAmzXy84CYcS1'
+        'category_id': category_id
     }
 
     response = requests.post(
